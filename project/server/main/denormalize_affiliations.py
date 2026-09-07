@@ -71,7 +71,7 @@ def get_orga_map():
     orga_map = {}
     for elt in data:
         res = {}
-        for e in ['id', 'kind', 'label', 'acronym', 'status', 'institutions', 'parents', 'isFrench', 'main_category', 'categories', 'is_main_parent', 'typologie_1', 'typologie_2', 'encoded_key']:
+        for e in ['id', 'kind', 'label', 'acronym', 'status', 'institutions', 'parents', 'isFrench', 'main_category', 'categories', 'is_main_parent', 'typologie_1', 'typologie_2', 'encoded_key', 'is_super_organization', 'super_organization_children']:
             if elt.get(e):
                 res[e] = elt[e]
         if res.get('status') == 'valid':

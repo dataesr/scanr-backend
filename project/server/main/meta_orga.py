@@ -245,6 +245,8 @@ def get_meta_orga(args):
     #to_jsonl(ed_data, '/upw_data/scanr/orga_ref/ed_data_formatted.jsonl')
     #logger.debug(f'{len(ed_data)} elts from ed')
     #full_data+= ed_data
+    
+    to_jsonl(full_data, '/upw_data/scanr/orga_ref/organizations-tmp-v2.jsonl')
 
     for org in full_data:
         for f in ['institutions', 'parents', 'leaders']:
@@ -318,6 +320,15 @@ def get_meta_orga(args):
             default_acronym = get_default_name(org['acronym'])
             data_to_encode['acronym'] = default_acronym
         org['encoded_key'] = urlencode(data_to_encode)
+    
+    for org in full_data:
+        addresses = org.get('address')
+        if isinstance(addresses, list):
+            for a in addresses:
+                if isinstance(a.get('country'), str):
+                    if a['country'] not in (country_iso3_name.values()):
+                        logger.debug(f"COUNTRY ISSUE !! for {a} in {e['id']}")
+                    assert(a['country'] in (country_iso3_name.values()))
 
     os.system('rm -rf /upw_data/scanr/orga_ref/organizations-v2.jsonl')
     to_jsonl(full_data, '/upw_data/scanr/orga_ref/organizations-v2.jsonl')

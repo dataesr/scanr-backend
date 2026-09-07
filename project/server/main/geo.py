@@ -38,10 +38,23 @@ def load_geo(args):
     os.system(elasticimport)
     refresh_index(index_name)
 
-def load_country(args):
+def load_country2(args):
     index_name = args.get('index_name')
-    r = requests.get(f'{DATAESR_URL}/organizations/_distinct/scanr/address.country', headers={'Authorization': f"Basic {os.getenv('DATAESR_HEADER')}"}).json()
-    data = [ {'autocompleted': [loc]} for loc in r['values']]
+    geo_field = 'country'
+    url = 'https://scanr-data.s3.gra.io.cloud.ovh.net/production/organizations-v2.jsonl.gz'
+    df = pd.read_json(url, orient='records', lines=True)
+    geo_data = []
+    for e in df.to_dict(orient='records'):
+        if isinstance(e.get('address'), list):
+            for a in e['address']:
+                if isinstance(a, dict) and 'country' in a:
+                    if a[geo_field] not in geo_data:
+                        geo_data.append(a[geo_field])
+                    if a[geo_field]=="Etats-unis d'amérique":
+                        print(a)
+    data = [ {'autocompleted': [loc]} for loc in geo_data]
+    #r = requests.get(f'{DATAESR_URL}/organizations/_distinct/scanr/address.country', headers={'Authorization': f"Basic {os.getenv('DATAESR_HEADER')}"}).json()
+    #data = [ {'autocompleted': [loc]} for loc in r['values']]
     geo_file = '/upw_data/scanr/countries.jsonl'
     os.system(f'rm -rf {geo_file}')
     to_jsonl(data, geo_file)
