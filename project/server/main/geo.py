@@ -38,7 +38,7 @@ def load_geo(args):
     os.system(elasticimport)
     refresh_index(index_name)
 
-def load_country2(args):
+def load_country(args):
     index_name = args.get('index_name')
     geo_field = 'country'
     url = 'https://scanr-data.s3.gra.io.cloud.ovh.net/production/organizations-v2.jsonl.gz'

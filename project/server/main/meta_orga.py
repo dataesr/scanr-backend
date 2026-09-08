@@ -263,9 +263,9 @@ def get_meta_orga(args):
                 if a.get('country') == 'France':
                     a['iso3'] = 'FRA'
                 if isinstance(a.get('iso3'), str) and a['iso3'] in country_iso3_name:
-                    a['coutry'] = country_iso3_name[a['iso3']]
+                    a['country'] = country_iso3_name[a['iso3']]
                 else:
-                    logger.debug(f"no ISO3 for {a} in {e['id']}")
+                    logger.debug(f"no ISO3 for {a} in {org['id']}")
         extIdsToAdd = []
         if not isinstance(org.get('externalIds'), list):
             e['externalIds'] = []
@@ -327,7 +327,7 @@ def get_meta_orga(args):
             for a in addresses:
                 if isinstance(a.get('country'), str):
                     if a['country'] not in (country_iso3_name.values()):
-                        logger.debug(f"COUNTRY ISSUE !! for {a} in {e['id']}")
+                        logger.debug(f"COUNTRY ISSUE !! for {a} in {org['id']}")
                     assert(a['country'] in (country_iso3_name.values()))
 
     os.system('rm -rf /upw_data/scanr/orga_ref/organizations-v2.jsonl')

@@ -10,7 +10,7 @@ NB_MAX_CO_ELEMENTS = 20
 
 logger = get_logger(__name__)
     
-EXCLUDED_ID = ['881000251']
+EXCLUDED_ID = ['881000251', 'Bs6KL', 'E8rSC', 'HyLC1']
 
 MOUNTED_VOLUME = '/upw_data/'
 
