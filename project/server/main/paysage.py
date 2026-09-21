@@ -508,9 +508,15 @@ def format_paysage(paysage_ids, sirens, ror_map):
     for e in paysage_data:
         new_elt = {'id': e['id']}
         new_elt['is_super_organization'] = False
+        new_elt['is_part_of_super_organization'] = False
         if e['id'] in super_parents_children:
             new_elt['is_super_organization'] = True
             new_elt['super_organization_children'] = super_parents_children[e['id']]
+            new_elt['is_part_of_super_organization'] = True
+            new_elt['super_organization_parent'] = e['id']
+        if e['id'] in super_parents_dict:
+            new_elt['is_part_of_super_organization'] = True
+            new_elt['super_organization_parent'] = super_parents_dict[e['id']]
         to_keep = False
         if e['id'] in input_id_set:
             to_keep = True
