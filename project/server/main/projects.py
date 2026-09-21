@@ -259,7 +259,7 @@ def load_scanr_projects(scanr_output_file_denormalized, index_name, chunksize=50
     refresh_index(index_name)
 
 def get_participations_simple(project, orga_map, successeur_map):
-    FIELDS_IN_PART_STRUCT = ['id', 'id_name', 'id_name_default', 'kind', 'country', 'label', 'acronym', 'status', 'isFrench', 'main_category', 'is_main_parent', 'panel_erc', 'institutions', 'typologie_1', 'typologie_2', 'encoded_key', 'is_super_organization', 'super_organization_children']
+    FIELDS_IN_PART_STRUCT = ['id', 'id_name', 'id_name_default', 'kind', 'country', 'label', 'acronym', 'status', 'isFrench', 'main_category', 'is_main_parent', 'panel_erc', 'institutions', 'typologie_1', 'typologie_2', 'encoded_key', 'is_super_organization', 'super_organization_children', 'is_part_of_super_organization', 'super_organization_parent']
     FIELDS_IN_PART_PROJ = ['role', 'funding', 'id']
     participations = []
     if isinstance(project.get('participants', []), list):
@@ -280,6 +280,8 @@ def get_participations_simple(project, orga_map, successeur_map):
                 new_part['participant_key_id'] = new_part.get('participant_id', 'no_participant_id') + '###' + new_part['participation_id']
                 if new_part['participant_key_id'] not in [k['participant_key_id'] for k in participations]:
                     participations.append(new_part)
+                new_part['participant_super_organization_key_id'] = new_part.get('participant_super_organization_parent', 'no_participant_id') + '###' + new_part['participation_id']
+                new_part['participant_super_organization_id'] = new_part.get('participant_super_organization_parent', 'no_participant_id')
                 # ajout des participations des tutelles
                 nb_tutelles = 0
                 if isinstance(p['structure'].get('institutions'), list):
@@ -311,18 +313,29 @@ def add_flag(participations):
     # on parcourt la liste des participations pour calculer les flag
     # le but est de flagger quand un meme projet apparait avec le même participant ou la même région pour éviter les doubles comptes
     participant_id_present, participant_key_id_present = [], []
+    participant_id_present_super_organization, participant_key_id_present_super_organization = [], []
     region_present, region_participation_present = [], []
     for part in participations:
         part['participant_ignore_total_budget'] = False
         part['participant_ignore_funding'] = False
+        part['participant_ignore_total_budget_super_organization'] = False
+        part['participant_ignore_funding_super_organization'] = False
         part['region_ignore_total_budget'] = False
         part['region_ignore_funding'] = False
         if part['participant_id'] in participant_id_present:
             part['participant_ignore_total_budget'] = True # evite le double compte du budget total si le même participant est listé plusieurs fois
+        participant_id_present.append(part['participant_id'])
         if part['participant_key_id'] in participant_key_id_present:
             part['participant_ignore_funding'] = True # ne devrait pas arriver
             logger.debug(f"{part['participant_key_id']} déjà présent ! BIZARRE!!")
-        participant_id_present.append(part['participant_id'])
+        participant_key_id_present.append(part['participant_key_id'])
+        # pour les EPE (aka super-organization)
+        if part['participant_super_organization_id'] in participant_id_present_super_organization:
+            part['participant_ignore_total_budget_super_organization'] = True # evite le double compte du budget total si le même participant est listé plusieurs fois
+        participant_id_present_super_organization.append(part['participant_super_organization_id'])
+        if part['participant_super_organization_key_id'] in participant_key_id_present_super_organization:
+            part['participant_ignore_funding_super_organization'] = True # evite double compte pour les etablissements composantes dans les EPE
+        participant_key_id_present_super_organization.append(part['participant_super_organization_key_id'])
         if isinstance(part.get('address'), dict) and isinstance(part['address'].get('region'), str):
             if part['address'].get('region') in region_present:
                 part['region_ignore_total_budget'] = True # evite le double compte du budget total si la meme region apparait plusieurs fois
