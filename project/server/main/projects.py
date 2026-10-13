@@ -278,10 +278,11 @@ def get_participations_simple(project, orga_map, successeur_map):
                 if 'participation_id' not in new_part:
                     logger.debug(f'no participation_id for {project}')
                 new_part['participant_key_id'] = new_part.get('participant_id', 'no_participant_id') + '###' + new_part['participation_id']
+                if new_part.get('participant_is_part_of_super_organization', False) == True: # le == True est nécessaire car il y a des NaN ; le flag est aussi True pour la super_orga elle-même
+                    new_part['participant_super_organization_id']     = new_part.get('participant_super_organization_parent', 'no_participant_id')
+                    new_part['participant_super_organization_key_id'] = new_part.get('participant_super_organization_parent', 'no_participant_id') + '###' + new_part['participation_id']
                 if new_part['participant_key_id'] not in [k['participant_key_id'] for k in participations]:
                     participations.append(new_part)
-                new_part['participant_super_organization_key_id'] = new_part.get('participant_super_organization_parent', 'no_participant_id') + '###' + new_part['participation_id']
-                new_part['participant_super_organization_id'] = new_part.get('participant_super_organization_parent', 'no_participant_id')
                 # ajout des participations des tutelles
                 nb_tutelles = 0
                 if isinstance(p['structure'].get('institutions'), list):
@@ -305,6 +306,9 @@ def get_participations_simple(project, orga_map, successeur_map):
                                 if f in p:
                                     new_part[f'participation_{f}'] = p[f]
                             new_part['participant_key_id'] = new_part.get('participant_id', 'no_participant_id') + '###' + new_part['participation_id']
+                            if new_part.get('participant_is_part_of_super_organization', False) == True: # le == True est nécessaire car il y a des NaN
+                                new_part['participant_super_organization_id']     = new_part.get('participant_super_organization_parent', 'no_participant_id')
+                                new_part['participant_super_organization_key_id'] = new_part.get('participant_super_organization_parent', 'no_participant_id') + '###' + new_part['participation_id']
                             if new_part['participant_key_id'] not in [k['participant_key_id'] for k in participations]:
                                 participations.append(new_part)
     return participations
@@ -330,12 +334,13 @@ def add_flag(participations):
             logger.debug(f"{part['participant_key_id']} déjà présent ! BIZARRE!!")
         participant_key_id_present.append(part['participant_key_id'])
         # pour les EPE (aka super-organization)
-        if part['participant_super_organization_id'] in participant_id_present_super_organization:
-            part['participant_ignore_total_budget_super_organization'] = True # evite le double compte du budget total si le même participant est listé plusieurs fois
-        participant_id_present_super_organization.append(part['participant_super_organization_id'])
-        if part['participant_super_organization_key_id'] in participant_key_id_present_super_organization:
-            part['participant_ignore_funding_super_organization'] = True # evite double compte pour les etablissements composantes dans les EPE
-        participant_key_id_present_super_organization.append(part['participant_super_organization_key_id'])
+        if part.get('participant_is_part_of_super_organization', False) == True:
+            if part['participant_super_organization_id'] in participant_id_present_super_organization:
+                part['participant_ignore_total_budget_super_organization'] = True # evite le double compte du budget total si le même participant est listé plusieurs fois
+            participant_id_present_super_organization.append(part['participant_super_organization_id'])
+            if part['participant_super_organization_key_id'] in participant_key_id_present_super_organization:
+                part['participant_ignore_funding_super_organization'] = True # evite double compte pour les etablissements composantes dans les EPE
+            participant_key_id_present_super_organization.append(part['participant_super_organization_key_id'])
         if isinstance(part.get('address'), dict) and isinstance(part['address'].get('region'), str):
             if part['address'].get('region') in region_present:
                 part['region_ignore_total_budget'] = True # evite le double compte du budget total si la meme region apparait plusieurs fois
@@ -348,7 +353,7 @@ def add_flag(participations):
 
 def enrich_participations(participations, project, orga_map):
     for part in participations:
-        for f in ['id', 'type', 'year', 'budgetTotal', 'budgetFinanced', 'classification', 'instrument', 'pilier_global_name']:
+        for f in ['id', 'type', 'year', 'budgetTotal', 'budgetFinanced', 'classification', 'instrument', 'pilier_global_name', 'intitule_du_comite', 'code_aap_comites', 'intitule_complet_du_comite', 'mots_cles_ces']:
             if f in project:
                 part[f'project_{f}']=project[f]
         if isinstance(project.get('action'), dict) and isinstance(project['action'].get('label', {}).get('default'), str):

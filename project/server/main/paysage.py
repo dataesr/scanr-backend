@@ -509,6 +509,8 @@ def format_paysage(paysage_ids, sirens, ror_map):
         new_elt = {'id': e['id']}
         new_elt['is_super_organization'] = False
         new_elt['is_part_of_super_organization'] = False
+        #new_elt['super_organization_children'] = []
+        #new_elt['super_organization_parent'] = "no_super_organization_{e['id']}"
         if e['id'] in super_parents_children:
             new_elt['is_super_organization'] = True
             new_elt['super_organization_children'] = super_parents_children[e['id']]
