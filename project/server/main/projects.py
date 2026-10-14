@@ -183,7 +183,8 @@ def load_projects(args):
             classification = get_mistral_answer(projects[ix], myclient)
             if classification:
                 projects[ix]['classification'] = classification
-                projects[ix]['classification']['primary_field'] = clean_discipline(classification['primary_field'])
+                if classification.get('primary_field'):
+                    projects[ix]['classification']['primary_field'] = clean_discipline(classification['primary_field'])
             formatted_participations = get_participations(projects[ix], orga_map, successeur_map)
             if formatted_participations:
                 participations += formatted_participations
