@@ -1,4 +1,4 @@
-DOCKER_IMAGE_NAME=dataesr/person-matcher
+DOCKER_IMAGE_NAME=dataesr/scanr-backend
 GHCR_IMAGE_NAME=ghcr.io/$(DOCKER_IMAGE_NAME)
 CURRENT_VERSION=$(shell cat project/__init__.py | cut -d "'" -f 2)
 

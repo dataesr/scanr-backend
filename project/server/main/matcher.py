@@ -45,7 +45,7 @@ def get_manual_match():
 def get_publications_from_author_key(author_key):
     myclient = pymongo.MongoClient('mongodb://mongo:27017/')
     mydb = myclient['scanr']
-    mycoll = mydb['person_matcher_input']
+    mycoll = mydb['scanr_backend_input']
     res = list(mycoll.find({'authors.author_key': author_key}))
     myclient.close()
     return res
@@ -72,14 +72,14 @@ def pre_process_publications(args):
         logger.debug(f'concatenating {f} into {enriched_file}')
         os.system(f'cat {f} >> {enriched_file}')
     
-    logger.debug('dropping collection person_matcher_input')
+    logger.debug('dropping collection scanr_backend_input')
     myclient = pymongo.MongoClient('mongodb://mongo:27017/')
     mydb = myclient['scanr']
-    mycoll = mydb['person_matcher_input']
+    mycoll = mydb['scanr_backend_input']
     mycoll.drop()
     
-    logger.debug('dropping collection person_matcher_output')
-    mydb['person_matcher_output'].drop()
+    logger.debug('dropping collection scanr_backend_output')
+    mydb['scanr_backend_output'].drop()
     myclient.close()
 
     manuel_matches = get_manual_match()
@@ -267,9 +267,9 @@ def prepare_publications(publications, manuel_matches):
 def save_to_mongo_preprocessed(relevant_infos):
     myclient = pymongo.MongoClient('mongodb://mongo:27017/')
     mydb = myclient['scanr']
-    output_json = f'{MOUNTED_VOLUME}person-matcher-current.jsonl'
+    output_json = f'{MOUNTED_VOLUME}scanr-backend-current.jsonl'
     pd.DataFrame(relevant_infos).to_json(output_json, lines=True, orient='records')
-    collection_name = 'person_matcher_input'
+    collection_name = 'scanr_backend_input'
     mongoimport = f'mongoimport --numInsertionWorkers 2 --uri mongodb://mongo:27017/scanr --file {output_json}' \
                   f' --collection {collection_name}'
     logger.debug(f'{mongoimport}')
@@ -283,7 +283,7 @@ def save_to_mongo_preprocessed(relevant_infos):
 def index_preprocessed():
     myclient = pymongo.MongoClient('mongodb://mongo:27017/')
     mydb = myclient['scanr']
-    collection_name = 'person_matcher_input'
+    collection_name = 'scanr_backend_input'
     logger.debug(f'Checking indexes on collection {collection_name}')
     mycol = mydb[collection_name]
     mycol.create_index('authors.author_key')
@@ -294,7 +294,7 @@ def save_to_mongo_results(results, author_key):
     mydb = myclient['scanr']
     output_json = f'{MOUNTED_VOLUME}{author_key[0:100]}.jsonl'
     pd.DataFrame(results).to_json(output_json, lines=True, orient='records')
-    collection_name = 'person_matcher_output'
+    collection_name = 'scanr_backend_output'
     mongoimport = f'mongoimport --numInsertionWorkers 2 --uri mongodb://mongo:27017/scanr --file {output_json}' \
                   f' --collection {collection_name}'
     logger.debug(f'{mongoimport}')
@@ -306,7 +306,7 @@ def save_to_mongo_results(results, author_key):
 def index_results():
     myclient = pymongo.MongoClient('mongodb://mongo:27017/')
     mydb = myclient['scanr']
-    collection_name = 'person_matcher_output'
+    collection_name = 'scanr_backend_output'
     logger.debug(f'Checking indexes on collection {collection_name}')
     mycol = mydb[collection_name]
     mycol.create_index('publication_id')

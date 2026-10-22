@@ -7,13 +7,12 @@ class BaseConfig(object):
     """Base configuration."""
 
     WTF_CSRF_ENABLED = True
+    REDIS_QUEUES = ["scanr-backend"]
     REDIS_URL = "redis://redis:6379/0"
-    QUEUES = ["person-matcher"]
 
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""
-
     WTF_CSRF_ENABLED = False
 
 

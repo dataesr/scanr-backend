@@ -19,7 +19,9 @@ from project.server.main.logger import get_logger
 
 logger = get_logger(__name__)
 
-MOUNTED_VOLUME = '/upw_data/'
+MOUNTED_VOLUME = "/upw_data/"
+redis_queue = current_app.config["REDIS_QUEUES"][0]
+redis_url = current_app.config["REDIS_URL"]
 
 
 @main_blueprint.route("/", methods=["GET"])
@@ -30,28 +32,28 @@ def home():
 def run_task_scanr_other():
     args = request.get_json(force=True)
     if args.get('projects'):
-        with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-            q = Queue("person-matcher", default_timeout=21600000)
+        with Connection(redis.from_url(redis_url)):
+            q = Queue(redis_queue, default_timeout=21600000)
             task = q.enqueue(load_projects, args)
     if args.get('patents'):
-        with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-            q = Queue("person-matcher", default_timeout=21600000)
+        with Connection(redis.from_url(redis_url)):
+            q = Queue(redis_queue, default_timeout=21600000)
             task = q.enqueue(load_patents, args)
     if args.get('orga'):
-        with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-            q = Queue("person-matcher", default_timeout=21600000)
+        with Connection(redis.from_url(redis_url)):
+            q = Queue(redis_queue, default_timeout=21600000)
             task = q.enqueue(load_orga, args)
     if args.get('geo'):
-        with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-            q = Queue("person-matcher", default_timeout=21600000)
+        with Connection(redis.from_url(redis_url)):
+            q = Queue(redis_queue, default_timeout=21600000)
             task = q.enqueue(load_geo, args)
     if args.get('country'):
-        with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-            q = Queue("person-matcher", default_timeout=21600000)
+        with Connection(redis.from_url(redis_url)):
+            q = Queue(redis_queue, default_timeout=21600000)
             task = q.enqueue(load_country, args)
     if args.get('persons_post_treatment'):
-        with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-            q = Queue("person-matcher", default_timeout=21600000)
+        with Connection(redis.from_url(redis_url)):
+            q = Queue(redis_queue, default_timeout=21600000)
             task = q.enqueue(post_treatment_persons, args)
     response_object = {
         "status": "success",
@@ -64,8 +66,8 @@ def run_task_scanr_other():
 @main_blueprint.route("/scanr", methods=["POST"])
 def run_task_scanr():
     args = request.get_json(force=True)
-    with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-        q = Queue("person-matcher", default_timeout=21600000)
+    with Connection(redis.from_url(redis_url)):
+        q = Queue(redis_queue, default_timeout=21600000)
         task = q.enqueue(export_scanr2, args)
     response_object = {
         "status": "success",
@@ -84,8 +86,8 @@ def run_task_match_all():
     if args.get('reset_db', True):
         myclient = pymongo.MongoClient('mongodb://mongo:27017/')
         mydb = myclient['scanr']
-        logger.debug('dropping collection person_matcher_output')
-        mydb['person_matcher_output'].drop()
+        logger.debug('dropping collection scanr_backend_output')
+        mydb['scanr_backend_output'].drop()
         myclient.close()
 
     author_keys = json.load(open(f'{MOUNTED_VOLUME}/author_keys.json', 'r'))
@@ -94,8 +96,8 @@ def run_task_match_all():
     harvest_sudoc = args.get('harvest_sudoc', False)
     nb_keys = 0
     for chunk in author_keys_chunks:
-        with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-            q = Queue("person-matcher", default_timeout=2160000)
+        with Connection(redis.from_url(redis_url)):
+            q = Queue(redis_queue, default_timeout=2160000)
             task = q.enqueue(match_all, chunk, harvest_sudoc)
             nb_keys += len(chunk)
             logger.debug(f'{nb_keys} keys sent')
@@ -113,8 +115,8 @@ def run_task_match_all():
 @main_blueprint.route("/match2", methods=["POST"])
 def run_task_match2():
     args = request.get_json(force=True)
-    with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-        q = Queue("person-matcher", default_timeout=21600000)
+    with Connection(redis.from_url(redis_url)):
+        q = Queue(redis_queue, default_timeout=21600000)
         task = q.enqueue(create_task_match, args)
     response_object = {
         "status": "success",
@@ -128,22 +130,13 @@ def run_task_match2():
 @main_blueprint.route("/match", methods=["POST"])
 def run_task_match():
     args = request.get_json(force=True)
-    #with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-    #    q = Queue("person-matcher", default_timeout=216000)
-    #    task = q.enqueue(create_task_match, args)
-    #response_object = {
-    #    "status": "success",
-    #    "data": {
-    #        "task_id": task.get_id()
-    #    }
-    #}
     response_object = create_task_match(args)
     return jsonify(response_object), 202
 
 @main_blueprint.route("/tasks/<task_id>", methods=["GET"])
 def get_status(task_id):
-    with Connection(redis.from_url(current_app.config["REDIS_URL"])):
-        q = Queue("person-matcher")
+    with Connection(redis.from_url(redis_url)):
+        q = Queue(redis_queue)
         task = q.fetch_job(task_id)
     if task:
         response_object = {
