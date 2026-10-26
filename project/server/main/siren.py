@@ -5,7 +5,7 @@ import datetime
 from io import BytesIO
 from retry import retry
 from pyproj import Transformer
-from project.server.main.ods import get_ods_data
+
 from project.server.main.logger import get_logger
 from project.server.main.utils import EXCLUDED_ID
 from project.server.main.cog import COG_TO_ISO3
@@ -58,6 +58,10 @@ ET_COLS = [
 
 UL_HISTO_COLS = [
         "siren", "dateDebut", "dateFin", "denominationUniteLegale"]
+
+# See source here : https://www.insee.fr/fr/information/2028129
+legal_categories = pd.read_csv("siren_categories_juridiques.csv", dtype={"Code": str}, index_col="Code")
+legal_categories = legal_categories.to_dict()["Libellé"]
 
 # Fonction pour lire parquet depuis URL
 def read_parquet_from_url(url, columns=None):
@@ -167,7 +171,7 @@ def format_siren(siren_list, siret_list, existing_siren=[]):
         except:
             logger.debug(f"SIREN no name for {e}") 
             assert(isinstance(new_elt['label']['default'], str))
-        #address
+        # address
         address = {'main': True}
         if isinstance(e.get('codePaysEtrangerEtablissement'), str):
             assert(e['codePaysEtrangerEtablissement'] in COG_TO_ISO3)
@@ -187,6 +191,9 @@ def format_siren(siren_list, siret_list, existing_siren=[]):
         if isinstance(e.get('lat'), float) and isinstance(e.get('lon'), float):
             address['gps'] = {'lat': e['lat'], 'lon': e['lon']}
         new_elt['address'] = [address]
+        # kind and level
+        new_elt['kind'] = ['Secteur public'] if str(e['categorieJuridiqueUniteLegale']).startswith('7') else ['Secteur privé']
+        new_elt['level'] = legal_categories[e['categorieJuridiqueUniteLegale']].strip()
         if main_id in EXCLUDED_ID:
             continue
         if main_id in existing_siren_set:
