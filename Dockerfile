@@ -48,6 +48,6 @@ ENV LANGUAGE=en_US.UTF-8
 COPY requirements.txt /src/requirements.txt
 RUN pip3 install --upgrade pip
 RUN pip3 install -r requirements.txt --proxy=${HTTP_PROXY}
-RUN npm install elasticdump -g
+RUN npm install -g elasticdump@6.124.1
 
 COPY . /src
