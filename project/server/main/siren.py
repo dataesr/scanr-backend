@@ -57,68 +57,60 @@ ET_COLS = [
 ]
 
 UL_HISTO_COLS = [
-        "siren", "dateDebut", "dateFin", "denominationUniteLegale"]
+    "siren", "dateDebut", "dateFin", "denominationUniteLegale"]
 
 # See source here : https://www.insee.fr/fr/information/2028129
-legal_categories = pd.read_csv("siren_categories_juridiques.csv", dtype={"Code": str}, index_col="Code")
+legal_categories = pd.read_csv("siren_categories_juridiques.csv", dtype={
+                               "Code": str}, index_col="Code")
 legal_categories = legal_categories.to_dict()["Libellé"]
 
 # Fonction pour lire parquet depuis URL
+
+
 def read_parquet_from_url(url, columns=None):
     logger.debug(f"Téléchargement depuis {url} ...")
     r = requests.get(url, stream=True)
     r.raise_for_status()
     return pd.read_parquet(BytesIO(r.content), columns=columns)
 
+
 @retry(delay=100, tries=4, logger=logger)
 def get_ul_histo():
-    df_ul = read_parquet_from_url(UNITE_LEGALE_HISTO_URL, columns=UL_HISTO_COLS)
+    df_ul = read_parquet_from_url(
+        UNITE_LEGALE_HISTO_URL, columns=UL_HISTO_COLS)
     logger.debug('ok')
     return df_ul
+
 
 @retry(delay=100, tries=4, logger=logger)
 def get_etab():
     df_et = read_parquet_from_url(ETABLISSEMENT_URL, columns=ET_COLS)
     logger.debug('ok')
     return df_et
-  
+
+
 @retry(delay=100, tries=4, logger=logger)
 def get_ul():
     df_ul = read_parquet_from_url(UNITE_LEGALE_URL, columns=UL_COLS)
     logger.debug('ok')
     return df_ul
 
-transformer = Transformer.from_crs(
-    "EPSG:2154",  # Lambert-93
-    "EPSG:4326",  # WGS84
-    always_xy=True
-)
 
 def get_lat_lon(df):
-    # Conversion en numérique, valeurs invalides -> NaN
-    x = pd.to_numeric(
-        df["coordonneeLambertAbscisseEtablissement"],
-        errors="coerce"
-    )
-    y = pd.to_numeric(
-        df["coordonneeLambertOrdonneeEtablissement"],
-        errors="coerce"
-    )
+    x_col = "coordonneeLambertAbscisseEtablissement"
+    y_col = "coordonneeLambertOrdonneeEtablissement"
+    df[x_col] = pd.to_numeric(df[x_col], errors="coerce")
+    df[y_col] = pd.to_numeric(df[y_col], errors="coerce")
+    df = df.dropna(subset=[x_col, y_col])
 
-    # Initialisation des colonnes résultat
-    df["lon"] = np.nan
-    df["lat"] = np.nan
-
-    # Masque des lignes exploitables
-    mask = x.notna() & y.notna()
-
-    # Transformation uniquement sur les lignes valides
-    df.loc[mask, "lon"], df.loc[mask, "lat"] = transformer.transform(
-        x[mask].values,
-        y[mask].values
+    # always_xy=True => ordre (x, y) en entrée et (lon, lat) en sortie
+    transformer = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
+    df["lon"], df["lat"] = transformer.transform(
+        df[x_col].values, df[y_col].values
     )
 
     return df
+
 
 def format_siren(siren_list, siret_list, existing_siren=[]):
     logger.debug('formatting siren data')
@@ -129,8 +121,10 @@ def format_siren(siren_list, siret_list, existing_siren=[]):
     df_ul = get_ul()
     df_et = get_etab()
     df_ul_filtered = df_ul[(df_ul["siren"].isin(sirens))]
-    df_et_filtered_siege = df_et[(df_et["siren"].isin(sirens)) & (df_et['etablissementSiege'])]
-    df_et_filtered_not_siege = df_et[(df_et["siret"].isin(siret_list)) & (df_et['etablissementSiege']==False)]
+    df_et_filtered_siege = df_et[(df_et["siren"].isin(
+        sirens)) & (df_et['etablissementSiege'])]
+    df_et_filtered_not_siege = df_et[(df_et["siret"].isin(
+        siret_list)) & (df_et['etablissementSiege'] == False)]
 
     all_et = pd.concat([df_et_filtered_siege, df_et_filtered_not_siege])
     all_et = get_lat_lon(all_et)
@@ -153,11 +147,12 @@ def format_siren(siren_list, siret_list, existing_siren=[]):
         new_elt['externalIds'].append({'id': e['siret'], 'type': 'siret'})
         # startDate
         if isinstance(e.get('dateCreationUniteLegale'), datetime.date):
-            new_elt['startDate'] = str(e['dateCreationUniteLegale'])+'T00:00:00'
+            new_elt['startDate'] = str(
+                e['dateCreationUniteLegale'])+'T00:00:00'
         if new_elt.get('startDate'):
             new_elt['creationYear'] = int(new_elt['startDate'][0:4])
         # status
-        new_elt['status']='active'
+        new_elt['status'] = 'active'
         # name
         for field in ['denominationUniteLegale', 'denominationUsuelle1UniteLegale', 'denominationUsuelle2UniteLegale', 'denominationUsuelle3UniteLegale', 'nomUniteLegale']:
             if isinstance(e.get(field), str):
@@ -167,14 +162,14 @@ def format_siren(siren_list, siret_list, existing_siren=[]):
                 if isinstance(e.get(field), str):
                     new_elt['label'] = {'default': e[field]}
         try:
-            assert(isinstance(new_elt['label']['default'], str))
+            assert (isinstance(new_elt['label']['default'], str))
         except:
-            logger.debug(f"SIREN no name for {e}") 
-            assert(isinstance(new_elt['label']['default'], str))
+            logger.debug(f"SIREN no name for {e}")
+            assert (isinstance(new_elt['label']['default'], str))
         # address
         address = {'main': True}
         if isinstance(e.get('codePaysEtrangerEtablissement'), str):
-            assert(e['codePaysEtrangerEtablissement'] in COG_TO_ISO3)
+            assert (e['codePaysEtrangerEtablissement'] in COG_TO_ISO3)
             new_elt['isFrench'] = False
             address['iso3'] = COG_TO_ISO3[e['codePaysEtrangerEtablissement']]
             address['country'] = e['libellePaysEtrangerEtablissement'].capitalize()
@@ -187,12 +182,14 @@ def format_siren(siren_list, siret_list, existing_siren=[]):
             address['city'] = e['libelleCommuneEtablissement']
         full_add = f"{e['numeroVoieEtablissement']} {e['typeVoieEtablissement']} {e['libelleVoieEtablissement']}".strip()
         if full_add:
-            address['address'] = full_add.replace('None', '').replace('  ', ' ').strip()
+            address['address'] = full_add.replace(
+                'None', '').replace('  ', ' ').strip()
         if isinstance(e.get('lat'), float) and isinstance(e.get('lon'), float):
             address['gps'] = {'lat': e['lat'], 'lon': e['lon']}
         new_elt['address'] = [address]
         # kind and level
-        new_elt['kind'] = ['Secteur public'] if str(e['categorieJuridiqueUniteLegale']).startswith('7') else ['Secteur privé']
+        new_elt['kind'] = ['Secteur public'] if str(
+            e['categorieJuridiqueUniteLegale']).startswith('7') else ['Secteur privé']
         new_elt['level'] = legal_categories[e['categorieJuridiqueUniteLegale']].strip()
         if main_id in EXCLUDED_ID:
             continue
