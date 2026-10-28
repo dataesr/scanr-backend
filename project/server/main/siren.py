@@ -21,39 +21,40 @@ UNITE_LEGALE_HISTO_URL = "https://www.data.gouv.fr/api/1/datasets/r/1b9290ed-d0b
 
 # Colonnes utiles après correction
 UL_COLS = [
-    "siren",
-    "nomUniteLegale",
-    "nomUsageUniteLegale",
+    "activitePrincipaleUniteLegale",
+    "categorieJuridiqueUniteLegale",
+    "dateCreationUniteLegale",
+    "dateDebut",
     "denominationUniteLegale",
     "denominationUsuelle1UniteLegale",
     "denominationUsuelle2UniteLegale",
     "denominationUsuelle3UniteLegale",
-    "categorieJuridiqueUniteLegale",
-    "dateDebut",
-    "dateCreationUniteLegale",
     "etatAdministratifUniteLegale",
-    "activitePrincipaleUniteLegale",
-    "trancheEffectifsUniteLegale"
+    "nomUniteLegale",
+    "nomUsageUniteLegale",
+    "siren",
+    "trancheEffectifsUniteLegale",
 ]
 
 ET_COLS = [
-    "siret",
-    "siren",
-    "etablissementSiege",
+    "codeCommuneEtablissement",
+    "codePaysEtrangerEtablissement",
+    "codePostalEtablissement",
+    "coordonneeLambertAbscisseEtablissement",
+    "coordonneeLambertOrdonneeEtablissement",
+    "dateDebut",
     "denominationUsuelleEtablissement",
     "enseigne1Etablissement",
     "enseigne2Etablissement",
     "enseigne3Etablissement",
-    "dateDebut",
-    "numeroVoieEtablissement",
-    "typeVoieEtablissement",
-    "libelleVoieEtablissement",
-    "codePostalEtablissement",
+    "etablissementSiege",
     "libelleCommuneEtablissement",
-    "coordonneeLambertAbscisseEtablissement",
-    "coordonneeLambertOrdonneeEtablissement",
-    "codePaysEtrangerEtablissement",
-    "libellePaysEtrangerEtablissement"
+    "libellePaysEtrangerEtablissement",
+    "libelleVoieEtablissement",
+    "numeroVoieEtablissement",
+    "siren",
+    "siret",
+    "typeVoieEtablissement",
 ]
 
 UL_HISTO_COLS = [
@@ -88,11 +89,20 @@ def get_ul():
     logger.debug('ok')
     return df_ul
 
-transformer = Transformer.from_crs(
-    "EPSG:2154",  # Lambert-93
-    "EPSG:4326",  # WGS84
-    always_xy=True
-)
+# Lambert-93 // # WGS84
+transformer = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
+transformers = {
+    # Guadeloupe : WGS84 / UTM 20N 971
+    "971": Transformer.from_crs("EPSG:32620", "EPSG:4326", always_xy=True),
+    # Martinique : WGS84 / UTM 20N 972
+    "972": Transformer.from_crs("EPSG:32620", "EPSG:4326", always_xy=True),
+    # Guyane     : RGFG95 / UTM 22N 973
+    "973": Transformer.from_crs("EPSG:2972", "EPSG:4326", always_xy=True),
+    # Réunion    : RGR92 / UTM 40S 974
+    "974": Transformer.from_crs("EPSG:2975", "EPSG:4326", always_xy=True),
+    # Mayotte    : RGM04 / UTM 38S 976
+    "976": Transformer.from_crs("EPSG:4471", "EPSG:4326", always_xy=True),
+}
 
 def get_lat_lon(df):
     # Conversion en numérique, valeurs invalides -> NaN
@@ -104,6 +114,7 @@ def get_lat_lon(df):
         df["coordonneeLambertOrdonneeEtablissement"],
         errors="coerce"
     )
+    dept = df["codeCommuneEtablissement"].astype("string").str[:3]
 
     # Initialisation des colonnes résultat
     df["lon"] = np.nan
@@ -112,11 +123,19 @@ def get_lat_lon(df):
     # Masque des lignes exploitables
     mask = x.notna() & y.notna()
 
-    # Transformation uniquement sur les lignes valides
-    df.loc[mask, "lon"], df.loc[mask, "lat"] = transformer.transform(
-        x[mask].values,
-        y[mask].values
+    def convertir(g):
+        t = transformers.get(g.name, transformer)   # défaut : Lambert-93
+        lon, lat = t.transform(g["x"].values, g["y"].values)
+        return pd.DataFrame({"lon": lon, "lat": lat}, index=g.index)
+
+
+    # Transformation uniquement sur les lignes valides, un groupe par département
+    res = (
+        pd.DataFrame({"x": x[mask], "y": y[mask]})
+        .groupby(dept[mask], dropna=False, group_keys=False)
+        .apply(convertir)
     )
+    df.loc[mask, ["lon", "lat"]] = res
 
     return df
 
