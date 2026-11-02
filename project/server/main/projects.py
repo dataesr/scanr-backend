@@ -12,6 +12,7 @@ from project.server.main.paysage import get_correspondance_paysage, get_main_id_
 from project.server.main.entity_fishing import get_entity_fishing
 from project.server.main.meta_orga import get_sirens_sirets
 from project.server.main.mistral import get_mistral_answer
+from project.server.main.topics_openalex import get_openalex_topics
 
 import pymongo
 import pysftp
@@ -185,6 +186,9 @@ def load_projects(args):
                 projects[ix]['classification'] = classification
                 if classification.get('primary_field'):
                     projects[ix]['classification']['primary_field'] = clean_discipline(classification['primary_field'])
+            topics_openalex = get_openalex_topics(projects[ix], myclient)
+            if topics_openalex:
+                projects[ix].update(topics_openalex)
             formatted_participations = get_participations(projects[ix], orga_map, successeur_map)
             if formatted_participations:
                 participations += formatted_participations
@@ -354,7 +358,7 @@ def add_flag(participations):
 
 def enrich_participations(participations, project, orga_map):
     for part in participations:
-        for f in ['id', 'type', 'year', 'budgetTotal', 'budgetFinanced', 'classification', 'instrument', 'pilier_global_name', 'intitule_du_comite', 'code_aap_comites', 'intitule_complet_du_comite', 'mots_cles_ces']:
+        for f in ['id', 'type', 'year', 'budgetTotal', 'budgetFinanced', 'classification', 'openalex_topics', 'openalex_primary_topic', 'openalex_keywords', 'instrument', 'pilier_global_name', 'intitule_du_comite', 'code_aap_comites', 'intitule_complet_du_comite', 'mots_cles_ces']:
             if f in project:
                 part[f'project_{f}']=project[f]
         if isinstance(project.get('action'), dict) and isinstance(project['action'].get('label', {}).get('default'), str):
