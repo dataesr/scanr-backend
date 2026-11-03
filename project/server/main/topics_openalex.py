@@ -46,11 +46,13 @@ def get_openalex_topics(project, myclient):
         return
     title = get_txt(project, 'label')
     abstract = ' '.join([get_txt(project, 'description'), get_txt(project, 'keywords')]).strip()
-    # l'API accepte entre 20 et 2000 caracteres (title + abstract)
-    abstract = abstract[:max(0, 2000 - len(title))]
+    # l'API accepte entre 20 et 2000 caracteres (title + abstract), on garde une marge
+    # car le décompte côté OpenAlex ne correspond pas exactement au len() python
+    title = title.strip()[:1900]
+    abstract = abstract[:1900 - len(title)].strip()
     if len(title) + len(abstract) < 20:
         return
-    params = {'title': title[:2000], 'abstract': abstract}
+    params = {'title': title, 'abstract': abstract}
     if os.getenv('OPENALEX_API_KEY'):
         params['api_key'] = os.getenv('OPENALEX_API_KEY')
     time.sleep(1) # rate limit 1 req/s
