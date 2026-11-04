@@ -186,9 +186,10 @@ def load_projects(args):
                 projects[ix]['classification'] = classification
                 if classification.get('primary_field'):
                     projects[ix]['classification']['primary_field'] = clean_discipline(classification['primary_field'])
-            topics_openalex = get_openalex_topics(projects[ix], myclient)
-            if topics_openalex:
-                projects[ix].update(topics_openalex)
+            if projects[ix].get('type') not in ['Autres financements européens', 'FP7', 'FP6']:
+                topics_openalex = get_openalex_topics(projects[ix], myclient)
+                if topics_openalex:
+                    projects[ix].update(topics_openalex)
             formatted_participations = get_participations(projects[ix], orga_map, successeur_map)
             if formatted_participations:
                 participations += formatted_participations
