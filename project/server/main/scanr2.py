@@ -199,16 +199,16 @@ def export_scanr2(args):
         input_patents = get_all_idrefs_from_patents()
         input_dict = get_vip()
         # writing output idrefs
-        gobal_file_authors = f'{MOUNTED_VOLUME}scanr_authors/output_idrefs.csv'
-        logger.debug(f'writing {gobal_file_authors}')
+        global_file_authors = f'{MOUNTED_VOLUME}scanr_authors/output_idrefs.csv'
+        logger.debug(f'writing {global_file_authors}')
         os.system(f'mkdir -p {MOUNTED_VOLUME}scanr_authors')
         os.system(f'mkdir -p {MOUNTED_VOLUME}scanr_authors/split')
         #os.system(f'echo "idref" > {MOUNTED_VOLUME}output_idrefs.csv')
         # export all the idrefs not linked to a sudoc - that is the target
-        cmd = f"mongoexport --forceTableScan --uri mongodb://mongo:27017/scanr --collection scanr_backend_output --fields person_id,publication_id --type=csv --noHeaderLine --out {MOUNTED_VOLUME}tmp.csv && cat {MOUNTED_VOLUME}tmp.csv | grep -v sudoc | cut -d ',' -f 1 | sort -u > {gobal_file_authors}"
+        cmd = f"mongoexport --forceTableScan --uri mongodb://mongo:27017/scanr --collection person_matcher_output --fields person_id,publication_id --type=csv --noHeaderLine --out {MOUNTED_VOLUME}tmp.csv && cat {MOUNTED_VOLUME}tmp.csv | grep -v sudoc | cut -d ',' -f 1 | sort -u > {global_file_authors}"
         os.system(cmd)
         os.system(f'rm -rf {MOUNTED_VOLUME}tmp.csv')
-        df = pd.read_csv(gobal_file_authors, header=None, names=['idref'])
+        df = pd.read_csv(global_file_authors, header=None, names=['idref'])
         idrefs = set([k.replace('idref', '') for k in df.idref.tolist()])
         # adding patents
         idrefs.update(input_patents.keys())

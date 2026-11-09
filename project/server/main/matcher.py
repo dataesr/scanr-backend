@@ -78,8 +78,8 @@ def pre_process_publications(args):
     mycoll = mydb['scanr_backend_input']
     mycoll.drop()
     
-    logger.debug('dropping collection scanr_backend_output')
-    mydb['scanr_backend_output'].drop()
+    logger.debug('dropping collection person_matcher_output')
+    mydb['person_matcher_output'].drop()
     myclient.close()
 
     manuel_matches = get_manual_match()
@@ -294,7 +294,7 @@ def save_to_mongo_results(results, author_key):
     mydb = myclient['scanr']
     output_json = f'{MOUNTED_VOLUME}{author_key[0:100]}.jsonl'
     pd.DataFrame(results).to_json(output_json, lines=True, orient='records')
-    collection_name = 'scanr_backend_output'
+    collection_name = 'person_matcher_output'
     mongoimport = f'mongoimport --numInsertionWorkers 2 --uri mongodb://mongo:27017/scanr --file {output_json}' \
                   f' --collection {collection_name}'
     logger.debug(f'{mongoimport}')
@@ -306,7 +306,7 @@ def save_to_mongo_results(results, author_key):
 def index_results():
     myclient = pymongo.MongoClient('mongodb://mongo:27017/')
     mydb = myclient['scanr']
-    collection_name = 'scanr_backend_output'
+    collection_name = 'person_matcher_output'
     logger.debug(f'Checking indexes on collection {collection_name}')
     mycol = mydb[collection_name]
     mycol.create_index('publication_id')

@@ -84,8 +84,8 @@ def run_task_match_all():
     if args.get('reset_db', True):
         myclient = pymongo.MongoClient('mongodb://mongo:27017/')
         mydb = myclient['scanr']
-        logger.debug('dropping collection scanr_backend_output')
-        mydb['scanr_backend_output'].drop()
+        logger.debug('dropping collection person_matcher_output')
+        mydb['person_matcher_output'].drop()
         myclient.close()
 
     author_keys = json.load(open(f'{MOUNTED_VOLUME}/author_keys.json', 'r'))
