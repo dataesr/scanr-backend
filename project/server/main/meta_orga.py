@@ -7,6 +7,8 @@ from project.server.main.rnsr import dump_rnsr_data, format_rnsr, dump_rnsr_data
 from project.server.main.siren import format_siren
 from project.server.main.paysage import format_paysage, get_correspondance_paysage, dump_full_paysage, get_main_id_paysage
 from project.server.main.ror import format_ror, dump_ror_data, get_grid2ror, get_ror_data_map
+from project.server.main.rnsr_ror import dump_rnsr_ror_correspondance
+from project.server.main.pic_ror import dump_pic_ror_correspondance
 from project.server.main.ods import get_ods_data, get_agreements, get_awards
 from project.server.main.logger import get_logger
 from project.server.main.utils_swift import download_object
@@ -335,3 +337,10 @@ def get_meta_orga(args):
     logger.debug(f'{len(full_data)} elts from total')
     os.system('cd /upw_data/scanr/orga_ref/ && rm -rf organizations-v2.jsonl.gz && gzip organizations-v2.jsonl')
     upload_object(container='scanr-data', source = f'/upw_data/scanr/orga_ref/organizations-v2.jsonl.gz', destination='production/organizations-v2.jsonl.gz')
+
+    # correspondances rnsr -> ror et pic -> ror
+    dump_rnsr_ror_correspondance(full_data)
+    try:
+        dump_pic_ror_correspondance(full_data)
+    except Exception as e:
+        logger.debug(f'!!! ERROR in computing PIC -> ROR correspondance : {e} !!!')
