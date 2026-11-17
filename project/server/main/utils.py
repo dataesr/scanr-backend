@@ -51,6 +51,12 @@ def get_main_id(current_id, correspondance):
                 return c['main_id']
     return current_id
 
+def normalize_rnsr_case(identifiant):
+    """RNSR (9 chiffres + lettre de contrôle) : lettre en majuscule, comme dans le référentiel. Autres ids inchangés."""
+    if isinstance(identifiant, str) and re.fullmatch(r"\d{9}[A-Za-z]", identifiant.strip()):
+        return identifiant.strip().upper()
+    return identifiant
+
 def identifier_type(identifiant: str):
     """
     Détermine le type d'identifiant parmi :

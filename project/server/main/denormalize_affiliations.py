@@ -1,5 +1,5 @@
 import pandas as pd
-from project.server.main.utils import EXCLUDED_ID, get_default_name, get_main_id
+from project.server.main.utils import EXCLUDED_ID, get_default_name, get_main_id, normalize_rnsr_case
 from project.server.main.logger import get_logger
 
 logger = get_logger(__name__)
@@ -102,10 +102,11 @@ def get_orga_map():
         else:
             logger.debug('No Label ???')
             logger.debug(res)
-        orga_map[elt['id']] = res
+        orga_map[normalize_rnsr_case(elt['id'])] = res
     return orga_map
 
 def get_orga(orga_map, orga_id):
+    orga_id = normalize_rnsr_case(orga_id)
     if orga_id in orga_map:
         return orga_map[orga_id]
     return {'id': orga_id}

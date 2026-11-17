@@ -1,7 +1,7 @@
 from project.server.main.strings import normalize
 from project.server.main.logger import get_logger
 from project.server.main.utils_swift import download_object, delete_object
-from project.server.main.utils import chunks, to_jsonl, to_json, get_co_occurences, save_to_mongo_publi_indexes, to_mongo_cache, clean_discipline
+from project.server.main.utils import chunks, to_jsonl, to_json, get_co_occurences, save_to_mongo_publi_indexes, to_mongo_cache, clean_discipline, normalize_rnsr_case
 from project.server.main.s3 import upload_object
 from project.server.main.denormalize_affiliations import get_orga, get_orga_map, get_projects_data, get_project, get_link_orga_projects, get_project_from_orga 
 from project.server.main.config import ES_LOGIN_BSO_BACK, ES_PASSWORD_BSO_BACK, ES_URL
@@ -102,9 +102,10 @@ def load_projects(args):
                 participant_name = 'participant'
                 if isinstance(participant_label.get('default'), str):
                     participant_name = participant_label['default'].split('__-__')[0]
-                part_id = part.get('structure')
+                part_id = normalize_rnsr_case(part.get('structure')) # certains RNSR arrivent en minuscules (ANR)
                 if part_id:
-                    part['participant_id'] = part.pop('structure')
+                    part.pop('structure')
+                    part['participant_id'] = part_id
                 if part_id is None and participant_name.lower() in PARTICIPANTS_CODED:
                     for coded_id in ['rnsr', 'paysage', 'siret', 'siren', 'ror', 'grid']:
                         if PARTICIPANTS_CODED[participant_name.lower()].get(coded_id):
