@@ -7,6 +7,7 @@ from project.server.main.denormalize_affiliations import get_orga, get_orga_map
 from project.server.main.config import ES_LOGIN_BSO_BACK, ES_PASSWORD_BSO_BACK, ES_URL
 from project.server.main.elastic import reset_index_scanr, refresh_index
 from project.server.main.vip import get_vip
+from project.server.main.entity_fishing import is_forbidden_domain
 import pickle
 from datetime import date
 import dateutil.parser
@@ -319,6 +320,8 @@ def get_domains_from_publications(publications):
     for p in publications:
         if isinstance(p.get('domains'), list):
             for d in p.get('domains', []):
+                if is_forbidden_domain(d):
+                    continue
                 domain_key = d.get('label', {}).get('default', '').lower().strip() + ';' + d.get('code', 'nocode') + ';' + d.get('type', 'notype')
                 if len(domain_key) > 200:
                     continue

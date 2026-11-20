@@ -10,6 +10,16 @@ ENTITY_FISHING_SERVICE = os.getenv('ENTITY_FISHING_SERVICE')
 logger = get_logger(__name__)
 
 forbid_wiki = set(pd.read_csv('forbid_wiki.csv')['wiki_id'].to_list())
+# libellés interdits quel que soit le QID (un même mot peut être lié à plusieurs entités)
+forbid_labels = set(pd.read_csv('forbid_labels.csv', keep_default_na=False)['label'].str.lower().str.strip().to_list())
+
+def is_forbidden_domain(domain):
+    if str(domain.get('code')) in forbid_wiki:
+        return True
+    label = domain.get('label', {}).get('default')
+    if isinstance(label, str) and label.lower().strip() in forbid_labels:
+        return True
+    return False
 
 def exception_handler(func):
     def inner_function(*args, **kwargs):
@@ -40,7 +50,8 @@ def get_entity_fishing(compute_new, publication: dict, myclient) -> dict:
     if is_ok_to_use_cache:
         pre_computed = get_from_mongo(str(publication['id']), myclient)
         if pre_computed and isinstance(pre_computed, list):
-            return pre_computed
+            # on refiltre le cache : les listes d'exclusion ont pu évoluer depuis le calcul
+            return [d for d in pre_computed if not is_forbidden_domain(d)]
 
     if compute_new is False:
         return {}
@@ -116,7 +127,7 @@ def format_classif(classifications):
             if c.get('label'):
                 domain = {'label': {'default': c['label'].capitalize()}}
                 domain['code'] = str(c.get('code'))
-                if domain['code'] in forbid_wiki:
+                if is_forbidden_domain(domain):
                     continue
                 domain['type'] = c.get('reference')
                 if domain['type'] in ['wikidata', 'sudoc']:
