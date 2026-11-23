@@ -22,8 +22,6 @@ from project.server.main.logger import get_logger
 
 logger = get_logger(__name__)
 
-# TODO recuperer etab reference à partir dump rnsr_dump_REPSTRUCT_REFERENT_20260416_part-0.csv.gz match rnsr / rnsr_key
-
 DATAESR_URL = os.getenv('DATAESR_URL')
 BASE_URL_RNSR = f'{DATAESR_URL}/fetchers/rnsr'
 
@@ -192,6 +190,7 @@ def transform(elt, leaders_dict, pids_from_idref, ror_map):
             if isinstance(s.get('supervision_type'), str):
                 new_inst['relationType'] = s.get('supervision_type')
             new_inst['rnsr_key'] = s.get('rnsr_key')
+            new_inst['referent'] = s.get('referent') is True
             if s['rnsr_key'] not in rnsr_key_struct_dict:
                 logger.debug(f"{s.get('rnsr_key')} not in rnsr key dict")
                 logger.debug(s)
