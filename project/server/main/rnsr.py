@@ -263,14 +263,20 @@ def dump_rnsr_data_v2(args, ror_map):
     df_rnsr = pd.read_json('/upw_data/scanr/orga_ref/rnsr_extract.jsonl', lines=True)
     data = []
     raw_rnsr = df_rnsr.to_dict(orient='records')
+    missing_keys = {}
     for elt in raw_rnsr:
         if isinstance(elt.get('supervisors'), list):
             for s in elt['supervisors']:
-                if s['rnsr_key'] not in rnsr_key_struct_dict:
-                    logger.debug(f"{s.get('rnsr_key')} not in rnsr key dict")
-                    logger.debug(s)
-                    logger.debug(elt)
-                    logger.debug('il faut compléter le fichier rnsr_key.jsonl')
+                if s.get('rnsr_key') not in rnsr_key_struct_dict:
+                    key = s.get('rnsr_key')
+                    if key not in missing_keys:
+                        missing_keys[key] = {'name': s.get('name'), 'rnsr_ids': []}
+                    missing_keys[key]['rnsr_ids'].append(elt.get('id'))
+    if missing_keys:
+        logger.debug(f'{len(missing_keys)} rnsr_key not in rnsr key dict - il faut compléter le fichier rnsr_key.json')
+        for key, info in missing_keys.items():
+            logger.debug(f"missing rnsr_key {key} ({info['name']}), used by {info['rnsr_ids']}")
+        raise ValueError(f'{len(missing_keys)} unknown rnsr_key: {list(missing_keys.keys())}')
     for k in raw_rnsr:
         n = transform(k, leaders_dict, pids_from_idref, ror_map)
         data.append(n)
