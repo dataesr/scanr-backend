@@ -13,6 +13,7 @@ from project.server.main.projects import load_projects
 from project.server.main.patents import load_patents
 from project.server.main.organisations import load_orga
 from project.server.main.geo import load_geo, load_country
+from project.server.main.rnest_init import run_rnest_job
 
 main_blueprint = Blueprint("main", __name__,)
 from project.server.main.logger import get_logger
@@ -67,6 +68,21 @@ def run_task_scanr():
     with Connection(redis.from_url(current_app.config["REDIS_URL"])):
         q = Queue(current_app.config["REDIS_QUEUES"][0], default_timeout=21600000)
         task = q.enqueue(export_scanr2, args)
+    response_object = {
+        "status": "success",
+        "data": {
+            "task_id": task.get_id()
+        }
+    }
+    return jsonify(response_object), 202
+
+@main_blueprint.route("/rnest_init", methods=["POST"])
+def run_task_rnest_init():
+    # args : {"cnrs_scrape": false, "cnrs_delay": 3}  (cnrs_delay : pause en s entre requêtes à l'annuaire CNRS)
+    args = request.get_json(force=True, silent=True) or {}
+    with Connection(redis.from_url(current_app.config["REDIS_URL"])):
+        q = Queue(current_app.config["REDIS_QUEUES"][0], default_timeout=21600000)
+        task = q.enqueue(run_rnest_job, args)
     response_object = {
         "status": "success",
         "data": {
