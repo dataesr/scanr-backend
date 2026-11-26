@@ -16,7 +16,9 @@ mesure où et comment les sources divergent.
    n'est pas filtré (IRL, sites à l'étranger) ; celui de l'établissement l'est, sinon
    une tutelle étrangère d'une IRL ferait entrer toutes ses composantes
 3. liens : graphe d'identifiants (IdRef, paysage, RNSR déclaré dans l'annuaire CNRS,
-   codes d'unité confirmés) et composantes connexes (= clusters)
+   codes d'unité confirmés, sigle + tutelle + ville) et composantes connexes (= clusters).
+   La ville se juge sur la commune ou l'unité urbaine (référentiel géographique MESR) :
+   Grenoble et Saint-Martin-d'Hères sont « même ville ».
 4. diagnostic : catégories de clusters, sources des liens, désaccords par champ,
    et vue par tutelle (unités vues par le RNSR et/ou par ROR, tutelle référente)
 
@@ -105,6 +107,7 @@ CODE_REGEX = re.compile(
 )
 LABEL_SIMILARITY_CONFIRM = 0.75
 LABEL_SIMILARITY_CLOSE = 0.8
+LABEL_SIMILARITY_ACRONYM = 0.5   # lien par sigle : libellés seulement « pas trop éloignés »
 # Rapprochement libellé de tutelle CNRS -> paysage : Jaccard minimal entre les unités
 # portant le libellé et celles dont le RNSR porte l'id paysage
 CNRS_TUTELLE_MIN_JACCARD = 0.5
@@ -128,8 +131,137 @@ def normalize_city(city) -> str:
     city = normalize_text(city)
     city = re.sub(r'\bcedex\b.*$', '', city)
     city = re.sub(r'\d+', '', city)
-    city = re.sub(r'^(saint|st) ', 'saint ', city)
-    return city.strip()
+    city = re.sub(r'\bst\b', 'saint', city)
+    city = re.sub(r'\bste\b', 'sainte', city)
+    city = re.sub(r'\blez\b', 'les', city)
+    # article en tête : « Le Kremlin-Bicêtre » = « Kremlin-Bicêtre »
+    city = re.sub(r'^(le|la|les|l) ', '', city)
+    # arrondissements : « Paris 5e », « Lyon 3eme arrondissement », « Marseille 13e »
+    city = re.sub(r'(\s+(e|er|eme|ème|arrondissement|arr))+$', '', city)
+    return re.sub(r'\s+', ' ', city).strip()
+
+
+# ---------------------------------------------------------------------------
+# Géographie : commune et unité urbaine (référentiel géographique MESR / INSEE)
+# ---------------------------------------------------------------------------
+# « même ville » se juge sur la commune, ou sur l'unité urbaine pour les campus
+# en périphérie (Grenoble <-> Saint-Martin-d'Hères). Attention, l'unité urbaine de
+# Paris est très large (Orsay, Gif, Saclay, Palaiseau en font partie).
+
+GEO_REF_URL = 'https://data.enseignementsup-recherche.gouv.fr/explore/dataset/fr-esr-referentiel-geographique/download/?format=csv'
+# Paris, Lyon, Marseille : les arrondissements sont rattachés à la commune
+PLM = (('751', '75056'), ('6938', '69123'), ('132', '13055'))
+FRENCH_COUNTRIES = {None, '', 'fr', 'fra', 'france'}
+# lieux usuels qui ne sont pas des communes -> commune de référence (même unité urbaine)
+PLACE_ALIASES = {
+    'sophia antipolis': 'valbonne',
+    'marne la vallee': 'champs sur marne',
+    'saint quentin en yvelines': 'guyancourt',
+    'paris saclay': 'saclay',
+}
+
+
+def load_geo_ref() -> Optional[dict]:
+    """
+    Index nom de commune normalisé -> communes candidates {com, uu, dep, lat, lon}.
+    Les anciens noms et les communes fusionnées pointent vers la commune actuelle.
+    Renvoie None si le référentiel est indisponible (comparaison sur le nom seul).
+    """
+    try:
+        import pandas as pd
+        url = GEO_REF_URL + (f"&apikey={os.getenv('ODS_API_KEY')}" if os.getenv('ODS_API_KEY') else '')
+        df = pd.read_csv(url, sep=';', dtype=str).fillna('')
+    except Exception as e:
+        logger.warning(f'référentiel géographique indisponible ({e}) : villes comparées sur le nom')
+        return None
+    current = {}
+    for row in df.to_dict(orient='records'):
+        if not row['com_nom_fin']:
+            current[row['com_code']] = row
+
+    def commune(row):
+        if row['com_nom_fin']:
+            # commune disparue : rattachée à la commune actuelle, ignorée sinon
+            if row['com_code_actuel'] not in current:
+                return None
+            row = current[row['com_code_actuel']]
+        code = row['com_code']
+        for prefix, plm in PLM:
+            if code.startswith(prefix) and len(code) == 5 and code != plm:
+                code = plm
+        lat, lon = (row['geolocalisation'].split(',') + [''])[0:2] if row['geolocalisation'] else ('', '')
+        return {'com': code, 'uu': row['uucr_id'] if row['uucr_id'].startswith('UU') else None,
+                'dep': row['dep_code'], 'lat': float(lat) if lat else None, 'lon': float(lon) if lon.strip() else None}
+
+    index = defaultdict(dict)
+    for row in df.to_dict(orient='records'):
+        c = commune(row)
+        if c is None:
+            continue
+        names = [row['com_nom']] + [n for n in row['com_nom_anciens'].split(';') if n]
+        for name in names:
+            index[normalize_city(name)].setdefault(c['com'], c)
+    logger.debug(f'référentiel géographique : {len(index)} noms de communes')
+    return {k: list(v.values()) for k, v in index.items()}
+
+
+def postcode_dep(postcode) -> Optional[str]:
+    pc = re.sub(r'\D', '', str(postcode or ''))
+    if len(pc) != 5:
+        return None
+    if pc.startswith('97') or pc.startswith('98'):
+        return pc[0:3]
+    if pc.startswith('20'):
+        return '2A' if int(pc) < 20200 else '2B'
+    return pc[0:2]
+
+
+def resolve_place(city, postcode=None, country=None, gps=None, geo_ref: Optional[dict] = None) -> Optional[dict]:
+    """
+    Commune et unité urbaine d'une fiche : {'com', 'uu', 'name'}.
+    Homonymes départagés par le code postal, sinon par les coordonnées GPS.
+    À l'étranger ou hors référentiel : le nom normalisé sert de commune.
+    """
+    name = normalize_city(city)
+    if not name:
+        return None
+    name = PLACE_ALIASES.get(name, name)
+    fallback = {'com': f'nom:{name}', 'uu': None, 'name': name}
+    if geo_ref is None or str(country or '').strip().lower() not in FRENCH_COUNTRIES:
+        return fallback
+    candidates = geo_ref.get(name) or []
+    dep = postcode_dep(postcode)
+    if dep and len(candidates) > 1:
+        candidates = [c for c in candidates if c['dep'] == dep] or candidates
+    if len(candidates) > 1 and gps and gps.get('lat') is not None:
+        located = [c for c in candidates if c['lat'] is not None]
+        if located:
+            candidates = [min(located, key=lambda c: (c['lat'] - gps['lat']) ** 2 + (c['lon'] - gps['lon']) ** 2)]
+    if len(candidates) != 1:
+        # homonymes non départagés : même unité urbaine pour tous, sinon nom seul
+        uus = {c['uu'] for c in candidates}
+        return dict(fallback, uu=uus.pop() if len(uus) == 1 and candidates else None)
+    c = candidates[0]
+    return {'com': c['com'], 'uu': c['uu'], 'name': name}
+
+
+def place_relation(a: Optional[dict], b: Optional[dict]) -> str:
+    """same_city / same_uu / different / unknown."""
+    if not a or not b:
+        return 'unknown'
+    # même nom : même ville (une des deux fiches n'a pas pu être située, homonymes)
+    if a['com'] == b['com'] or a['name'] == b['name']:
+        return 'same_city'
+    if a['uu'] and a['uu'] == b['uu']:
+        return 'same_uu'
+    return 'different'
+
+
+def records_place_relation(a: dict, b: dict) -> str:
+    return place_relation(a.get('place'), b.get('place'))
+
+
+CITY_OK = {'same_city', 'same_uu'}
 
 
 def normalize_url(url) -> tuple:
@@ -416,6 +548,10 @@ def load_sources() -> dict:
                 cnrs[p['id']] = p
     except Exception as e:
         logger.warning(f'cnrs : annuaire indisponible ({e}), diagnostic sans CNRS')
+    geo_ref = load_geo_ref()
+    for base in (rnsr, ror, cnrs):
+        for x in base.values():
+            x['place'] = resolve_place(x.get('city'), x.get('postcode'), x.get('country'), x.get('gps'), geo_ref)
     idref = load_idref_links()
     logger.debug(f'{len(rnsr)} RNSR, {len(ror)} ROR, {len(cnrs)} CNRS, {len(paysage)} paysage, '
                  f'idref={"indisponible" if idref is None else len(idref)}')
@@ -586,19 +722,139 @@ class UnionFind:
             self.parent[rb] = ra
 
 
+def ror_label_variants(r: dict) -> list:
+    """Noms ROR, avec et sans le préfixe « SIGLE: » (équipes-projets Inria notamment)."""
+    out = []
+    for n in r['names']:
+        out.append(n)
+        m = re.match(r'^\s*[^:]{1,30}\s*[:\-–]\s+(.+)$', n)
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def best_label_similarity(label, r: dict) -> float:
+    if not label:
+        return 0
+    return max((similarity(label, n) for n in ror_label_variants(r)), default=0)
+
+
+def shares_tutelle(unit: dict, r: dict, ror: dict, paysage: dict) -> bool:
+    unit_tutelle_rors = {x for t in unit['tutelles'] for x in tutelle_to_rors(t['id'], paysage)}
+    return bool(unit_tutelle_rors & set(ror_ancestors(r['id'], ror)))
+
+
 def confirm_code_link(unit: dict, r: dict, ror: dict, paysage: dict) -> list:
-    """Raisons qui confirment un lien par code d'unité (vide = non confirmé, ['tutelle'] seul = trop faible)."""
+    """
+    Raisons qui confirment un lien par code d'unité : acronym, label, tutelle, city
+    (même commune ou même unité urbaine).
+    """
     reasons = []
     acronym = normalize_text(unit['acronym'])
     ror_acronyms = {normalize_text(a) for a in r['acronyms']} | {normalize_text(n) for n in r['names']}
     if acronym and acronym in ror_acronyms:
         reasons.append('acronym')
-    unit_tutelle_rors = {x for t in unit['tutelles'] for x in tutelle_to_rors(t['id'], paysage)}
-    if unit_tutelle_rors & set(ror_ancestors(r['id'], ror)):
+    if shares_tutelle(unit, r, ror, paysage):
         reasons.append('tutelle')
-    if unit['label'] and max((similarity(unit['label'], n) for n in r['names']), default=0) >= LABEL_SIMILARITY_CONFIRM:
+    if best_label_similarity(unit['label'], r) >= LABEL_SIMILARITY_CONFIRM:
         reasons.append('label')
+    if records_place_relation(unit, r) in CITY_OK:
+        reasons.append('city')
     return reasons
+
+
+def code_link_decision(reasons: list) -> Optional[str]:
+    """None = lien accepté, sinon motif de rejet."""
+    if 'acronym' in reasons or 'label' in reasons:
+        return None
+    # une tutelle commune seule est trop faible (une université a des dizaines d'unités) ;
+    # tutelle + même ville suffit
+    if 'tutelle' in reasons and 'city' in reasons:
+        return None
+    return 'code_tutelle_only' if 'tutelle' in reasons else 'code_unconfirmed'
+
+
+def link_weak(sources: dict, perimeter: dict, edges: list, add, rejected: list, weak: list) -> None:
+    """
+    Liens faibles, appliqués après tous les autres, seulement entre une fiche RNSR actif (ou
+    CNRS) qui n'a pas encore de ROR et une fiche ROR du périmètre qui n'a ni RNSR ni CNRS,
+    et seulement si le rapprochement est unique des deux côtés (sinon acronym_ambiguous /
+    weak_ambiguous). Deux règles :
+    - code : code d'unité commun + tutelle commune + même ville (liste `weak`). Sans cette
+      précaution, un code repris par l'unité suivante (renouvellement) crée des conflits ;
+    - acronym : même sigle + tutelle commune + même ville (commune ou unité urbaine) +
+      libellés proches. Si la ville manque sur une des fiches, libellés très proches exigés.
+    """
+    rnsr, ror, cnrs, paysage = sources['rnsr'], sources['ror'], sources['cnrs'], sources['paysage']
+    uf = UnionFind()
+    for e in edges:
+        uf.union(e['a'], e['b'])
+    kinds_by_root = defaultdict(set)
+    for e in edges:
+        for node in (e['a'], e['b']):
+            kinds_by_root[uf.find(node)].add(node.split(':')[0])
+
+    def kinds(node):
+        return kinds_by_root.get(uf.find(node), set()) if node in uf.parent else set()
+
+    def unit_free(node):
+        kind, unit_id = node.split(':', 1)
+        if kind == 'rnsr':
+            return rnsr[unit_id]['active'] and 'ror' not in kinds(node)
+        return not kinds(node) & {'ror', 'rnsr'}
+
+    def ror_free(node):
+        return node[4:] in perimeter and not kinds(node) & {'rnsr', 'cnrs'}
+
+    candidates = defaultdict(list)
+    for row in weak:
+        if unit_free(row['a']) and ror_free(row['b']):
+            candidates[row['a']].append(row)
+        else:
+            rejected.append(dict(row, reason='code_weak_already_linked'))
+
+    ror_index = defaultdict(list)
+    for ror_id in perimeter:
+        if not ror_free(f'ror:{ror_id}'):
+            continue
+        r = ror[ror_id]
+        acronyms = {normalize_text(a) for a in r['acronyms']}
+        acronyms |= {normalize_text(n.split(':')[0]) for n in r['names'] if ':' in n}
+        for a in acronyms:
+            if len(a) >= 2:
+                ror_index[a].append(ror_id)
+    units = [('rnsr', u) for u in rnsr.values() if unit_free(f"rnsr:{u['id']}")]
+    units += [('cnrs', u) for u in cnrs.values() if unit_free(f"cnrs:{u['id']}")]
+    for kind, unit in units:
+        acronym = normalize_text(unit['acronym'])
+        for ror_id in ror_index.get(acronym, []) if len(acronym) >= 2 else []:
+            node = f"{kind}:{unit['id']}"
+            if any(row['b'] == f'ror:{ror_id}' for row in candidates.get(node, [])):
+                continue
+            r = ror[ror_id]
+            city = records_place_relation(unit, r)
+            sim = best_label_similarity(unit['label'], r)
+            tutelle = shares_tutelle(unit, r, ror, paysage)
+            row = {'a': node, 'b': f'ror:{ror_id}', 'source': 'acronym',
+                   'detail': f"{unit['acronym']} (city={city}, tutelle={tutelle}, label={sim:.2f})"}
+            if not tutelle:
+                rejected.append(dict(row, reason='acronym_no_tutelle'))
+            elif city == 'different':
+                rejected.append(dict(row, reason='acronym_city_different'))
+            elif city == 'unknown' and sim < LABEL_SIMILARITY_CLOSE:
+                rejected.append(dict(row, reason='acronym_city_unknown'))
+            elif sim < LABEL_SIMILARITY_ACRONYM:
+                rejected.append(dict(row, reason='acronym_label'))
+            else:
+                candidates[node].append(row)
+
+    claims = Counter(row['b'] for rows in candidates.values() for row in rows)
+    for rows in candidates.values():
+        for row in rows:
+            if len(rows) > 1 or claims[row['b']] > 1:
+                rejected.append(dict(row, reason=f"{'acronym' if row['source'] == 'acronym' else 'code_weak'}_ambiguous"))
+            else:
+                add(row['a'], row['b'], row['source'], row['detail'])
 
 
 def build_links(sources: dict, esr: dict, perimeter: dict) -> tuple:
@@ -653,6 +909,7 @@ def build_links(sources: dict, esr: dict, perimeter: dict) -> tuple:
             add(f"rnsr:{cu['rnsr']}", f"cnrs:{cu['id']}", 'cnrs')
 
     # codes d'unité : ROR du périmètre -> RNSR (actifs et inactifs) et -> CNRS, avec confirmation
+    weak = []
     for kind, base, source in (('rnsr', rnsr, 'code'), ('cnrs', cnrs, 'cnrs_code')):
         code_index = defaultdict(set)
         for unit in base.values():
@@ -663,16 +920,17 @@ def build_links(sources: dict, esr: dict, perimeter: dict) -> tuple:
             for code in r['codes']:
                 for unit_id in code_index.get(code, []):
                     reasons = confirm_code_link(base[unit_id], r, ror, paysage)
-                    detail = f'{code[0]} {code[1]}'
-                    # une tutelle commune seule est trop faible (une université a des dizaines d'unités)
-                    if reasons == ['tutelle']:
-                        rejected.append({'a': f'{kind}:{unit_id}', 'b': f'ror:{ror_id}', 'source': source,
-                                         'reason': 'code_tutelle_only', 'detail': detail})
-                    elif reasons:
-                        add(f'{kind}:{unit_id}', f'ror:{ror_id}', source, f"{detail} ({'+'.join(reasons)})")
+                    detail = f"{code[0]} {code[1]} ({'+'.join(reasons)}, city={records_place_relation(base[unit_id], r)})"
+                    reason = code_link_decision(reasons)
+                    if reason is None and 'acronym' not in reasons and 'label' not in reasons:
+                        # tutelle + ville : lien faible, appliqué en dernier (voir link_weak)
+                        weak.append({'a': f'{kind}:{unit_id}', 'b': f'ror:{ror_id}', 'source': source,
+                                     'detail': detail})
+                    elif reason is None:
+                        add(f'{kind}:{unit_id}', f'ror:{ror_id}', source, detail)
                     else:
                         rejected.append({'a': f'{kind}:{unit_id}', 'b': f'ror:{ror_id}', 'source': source,
-                                         'reason': 'code_unconfirmed', 'detail': detail})
+                                         'reason': reason, 'detail': detail})
 
     # codes d'unité : CNRS sans RNSR déclaré -> RNSR, avec confirmation par sigle ou libellé
     rnsr_code_index = defaultdict(set)
@@ -690,12 +948,17 @@ def build_links(sources: dict, esr: dict, perimeter: dict) -> tuple:
                     reasons.append('acronym')
                 if similarity(cu['label'] or '', unit['label'] or '') >= LABEL_SIMILARITY_CONFIRM:
                     reasons.append('label')
-                detail = f'{code[0]} {code[1]}'
+                # même code d'unité (même nomenclature) + même ville suffit
+                if records_place_relation(cu, unit) in CITY_OK:
+                    reasons.append('city')
+                detail = f"{code[0]} {code[1]} (city={records_place_relation(cu, unit)})"
                 if reasons:
                     add(f'rnsr:{rnsr_id}', f"cnrs:{cu['id']}", 'cnrs_code_rnsr', f"{detail} ({'+'.join(reasons)})")
                 else:
                     rejected.append({'a': f'rnsr:{rnsr_id}', 'b': f"cnrs:{cu['id']}", 'source': 'cnrs_code_rnsr',
                                      'reason': 'code_unconfirmed', 'detail': detail})
+    # liens faibles en dernier : code + tutelle + ville, et sigle + tutelle + ville
+    link_weak(sources, perimeter, edges, add, rejected, weak)
     logger.debug(f'{len(edges)} liens, {len(rejected)} rejetés ({dict(Counter(e["source"] for e in edges))})')
     return edges, rejected
 
@@ -885,7 +1148,8 @@ def compare_pair(unit: dict, r: dict, sources: dict) -> dict:
         'acronym': compare_values(unit['acronym'], r['acronyms'],
                                   lambda a, b: normalize_text(a) in {normalize_text(x) for x in b}),
         'website': compare_values(unit['website'], r['website'], same_url, same_domain),
-        'city': compare_values(unit['city'], r['city'], lambda a, b: normalize_city(a) == normalize_city(b)),
+        'city': compare_values(unit['city'], r['city'], lambda a, b: records_place_relation(unit, r) == 'same_city',
+                               lambda a, b: records_place_relation(unit, r) == 'same_uu'),
         'start_year': compare_values(unit['start_year'], r['start_year'], lambda a, b: a == b),
         'tutelles': tutelles['status'],
         'referent': compare_referent(unit, r, sources),
@@ -949,8 +1213,8 @@ def compare_rnsr_cnrs(unit: dict, cu: dict, sources: dict) -> dict:
         'website': compare_values(unit['website'], cu['website'],
                                   lambda a, b: normalize_url(a)[1] == normalize_url(b)[1],
                                   lambda a, b: normalize_url(a)[0] == normalize_url(b)[0], names=names),
-        'city': compare_values(unit['city'], cu['city'],
-                               lambda a, b: normalize_city(a) == normalize_city(b), names=names),
+        'city': compare_values(unit['city'], cu['city'], lambda a, b: records_place_relation(unit, cu) == 'same_city',
+                               lambda a, b: records_place_relation(unit, cu) == 'same_uu', names=names),
         'postcode': compare_values(unit['postcode'], cu['postcode'], lambda a, b: str(a)[0:2] == str(b)[0:2],
                                    names=names),
         'tutelles': tutelles,
